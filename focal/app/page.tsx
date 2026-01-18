@@ -3,16 +3,20 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
-import { useWebcam } from './hooks/useWebcam';
+import { useWebcamWithLiveKit } from './hooks/useWebcamWithLiveKit';
 import { useFocusDetection } from './hooks/useFocusDetection';
 import { useOvershootDetection, OvershootAnalysis } from './hooks/useOvershootDetection';
 import { useEscalation } from './hooks/useEscalation';
+import { usePageVisibility } from './hooks/usePageVisibility';
+import { useTabFocusNotification, requestNotificationPermission } from './hooks/useTabFocusNotification';
 import { useFocusStore } from './store/focusStore';
 import { initializeGemini, isGeminiInitialized } from './lib/gemini';
 import { WebcamView } from './components/WebcamView';
 import { FocusIndicator } from './components/FocusIndicator';
 import { InterventionOverlay } from './components/InterventionOverlay';
 import { UltimateDeterrent } from './components/UltimateDeterrent';
+import { LiveKitStatus } from './components/LiveKitStatus';
+import { TabFocusIndicator } from './components/TabFocusIndicator';
 
 export default function Home() {
   const [apiKey, setApiKey] = useState(process.env.NEXT_PUBLIC_GEMINI_API_KEY || '');
@@ -26,8 +30,19 @@ export default function Home() {
   }, []);
   const [detectionMode, setDetectionMode] = useState<'classic' | 'overshoot'>('classic');
   const [overshootAnalysis, setOvershootAnalysis] = useState<OvershootAnalysis | null>(null);
+  const [enableLiveKit, setEnableLiveKit] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
 
-  const { videoRef, state: webcamState, startCamera, stopCamera } = useWebcam();
+  const { videoRef, state: webcamState, startCamera, stopCamera } = useWebcamWithLiveKit({
+    enableLiveKit,
+    roomName: `focal-session-${Date.now()}`,
+    participantName: 'User',
+    onStreamingStateChange: useCallback((isStreaming) => {
+      if (isStreaming) {
+        toast.success('LiveKit streaming active');
+      }
+    }, []),
+  });
 
   const {
     isSessionActive,
@@ -39,6 +54,15 @@ export default function Home() {
     endSession,
     updateFocusState,
   } = useFocusStore();
+
+  // Track page visibility (for TabFocusIndicator component)
+  const { isVisible } = usePageVisibility();
+
+  // Show browser notification when tab becomes hidden during active session
+  // This listens directly to visibilitychange events, not React state
+  useTabFocusNotification({
+    isSessionActive,
+  });
 
   // Overshoot provides analysis to MediaPipe (runs when Overshoot mode is enabled)
   const { state: overshootState } = useOvershootDetection({
@@ -66,14 +90,21 @@ export default function Home() {
   // Use MediaPipe state (which incorporates Overshoot analysis when in Overshoot mode)
   const detectionState = mediapipeState;
 
-  // Escalation system
-  useEscalation();
+  // Escalation system with voice responses
+  useEscalation({ voiceEnabled });
 
   // Handle session start
   const handleStartSession = async () => {
     if (!webcamState.isActive) {
       await startCamera();
     }
+    
+    // Request notification permission during user gesture (button click)
+    const permissionGranted = await requestNotificationPermission();
+    if (!permissionGranted) {
+      toast.info('Enable notifications to get alerts when you switch tabs');
+    }
+    
     startSession();
     toast.success('Focus session started! Stay locked in. 🎯');
   };
@@ -139,6 +170,9 @@ export default function Home() {
         }}
       />
 
+      {/* Tab focus indicator */}
+      <TabFocusIndicator isVisible={isVisible} isSessionActive={isSessionActive} />
+
       {/* Intervention overlays */}
       {escalationLevel === 1 && <InterventionOverlay level={1} />}
       {escalationLevel === 2 && <InterventionOverlay level={2} />}
@@ -196,16 +230,50 @@ export default function Home() {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 mb-4">
-                  <label className="text-sm text-[var(--text-secondary)]">Detection Mode:</label>
-                  <select
-                    value={detectionMode}
-                    onChange={(e) => setDetectionMode(e.target.value as 'classic' | 'overshoot')}
-                    className="bg-[var(--bg-secondary)] border border-[var(--glass-border)] text-[var(--text-primary)] rounded px-2 py-1 text-sm"
-                  >
-                    <option value="classic">Classic (MediaPipe Only)</option>
-                    <option value="overshoot">Hybrid (MediaPipe + AI Analysis)</option>
-                  </select>
+                <div className="space-y-3 mb-4">
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm text-[var(--text-secondary)]">Detection Mode:</label>
+                    <select
+                      value={detectionMode}
+                      onChange={(e) => setDetectionMode(e.target.value as 'classic' | 'overshoot')}
+                      className="bg-[var(--bg-secondary)] border border-[var(--glass-border)] text-[var(--text-primary)] rounded px-2 py-1 text-sm"
+                    >
+                      <option value="classic">Classic (MediaPipe Only)</option>
+                      <option value="overshoot">Hybrid (MediaPipe + AI Analysis)</option>
+                    </select>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={enableLiveKit}
+                      onChange={(e) => setEnableLiveKit(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-[var(--text-secondary)]">
+                      Enable LiveKit Streaming (for remote processing)
+                    </span>
+                  </label>
+                  {enableLiveKit && (
+                    <p className="text-xs text-[var(--text-muted)] ml-6">
+                      Video will be streamed to LiveKit server for low-latency remote processing
+                    </p>
+                  )}
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={voiceEnabled}
+                      onChange={(e) => setVoiceEnabled(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-[var(--text-secondary)]">
+                      Enable Voice Responses (context-aware audio feedback)
+                    </span>
+                  </label>
+                  {voiceEnabled && (
+                    <p className="text-xs text-[var(--text-muted)] ml-6">
+                      Focal will speak intervention messages based on your actions (e.g., "Put down your phone", "Look at your screen")
+                    </p>
+                  )}
                 </div>
 
                 <button type="submit" className="btn-primary w-full">
@@ -229,6 +297,16 @@ export default function Home() {
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.1 }}
             >
+              {/* LiveKit Status */}
+              {enableLiveKit && (
+                <LiveKitStatus
+                  isConnected={webcamState.liveKitConnected || false}
+                  isStreaming={webcamState.isStreaming || false}
+                  error={webcamState.liveKitError || null}
+                  participants={1}
+                />
+              )}
+
               <WebcamView
                 videoRef={videoRef}
                 state={webcamState}
@@ -273,9 +351,24 @@ export default function Home() {
 
               {/* Session Stats */}
               <div className="glass-card p-6">
-                <h2 className="text-lg font-semibold mb-4 text-[var(--text-primary)]">
-                  📊 Session Stats
-                </h2>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+                    📊 Session Stats
+                  </h2>
+                  {isSessionActive && (
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={voiceEnabled}
+                        onChange={(e) => setVoiceEnabled(e.target.checked)}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-xs text-[var(--text-secondary)]">
+                        🔊 Voice
+                      </span>
+                    </label>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="stat-card">
                     <span className="stat-label">Duration</span>
@@ -338,12 +431,20 @@ export default function Home() {
                     <span className="text-[var(--text-muted)]">•</span>
                     <span>30s focused → Slate wiped clean</span>
                   </li>
+                  {voiceEnabled && (
+                    <li className="flex items-start gap-2">
+                      <span className="text-[var(--accent-purple)]">🔊</span>
+                      <span>Voice responses provide context-aware feedback (e.g., "Put down your phone", "Look at your screen")</span>
+                    </li>
+                  )}
                 </ul>
               </div>
 
               {/* Privacy note */}
               <p className="text-xs text-[var(--text-muted)] text-center">
-                {detectionMode === 'classic' ? (
+                {enableLiveKit ? (
+                  <>🔒 LiveKit mode: Video streamed to server for remote processing. Low-latency real-time communication enabled.</>
+                ) : detectionMode === 'classic' ? (
                   <>🔒 Your video never leaves your device. All processing happens locally.</>
                 ) : (
                   <>🔒 Classic mode: 100% local. Hybrid mode: AI analysis sent to Overshoot API.</>

@@ -1,33 +1,93 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Focal - AI-Powered Focus Monitoring
+
+Focal is an AI-powered focus monitoring application that uses computer vision to track your attention and provide interventions when you get distracted.
+
+## Features
+
+- **Real-time Focus Detection**: Uses MediaPipe for local face detection and pose estimation
+- **AI-Powered Analysis**: Optional integration with Overshoot AI for enhanced vision analysis
+- **LiveKit Integration**: Real-time video/data streaming infrastructure for low-latency communication
+- **Escalation System**: Progressive interventions when distractions are detected
+- **Session Tracking**: Monitor focus statistics and session duration
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18+ and npm
+- Camera access
+- (Optional) Gemini API key for personality features
+- (Optional) Overshoot API key for AI vision mode
+- (Optional) LiveKit server for remote processing
+
+### Installation
+
+1. Clone the repository
+2. Install dependencies:
+
+```bash
+npm install
+```
+
+3. Set up environment variables (see `.env.example`):
+
+```bash
+cp .env.example .env.local
+```
+
+4. Run the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## LiveKit Integration
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Focal includes LiveKit integration for real-time video/data streaming, enabling:
+
+- Low-latency communication between client and server
+- Remote model execution on server-side
+- Scalable infrastructure for multiple concurrent sessions
+- Bidirectional data communication
+
+See [LIVEKIT_SETUP.md](./LIVEKIT_SETUP.md) for detailed setup instructions.
+
+### Quick Start with LiveKit
+
+1. Set up a LiveKit server (self-hosted or cloud)
+2. Add environment variables:
+   ```env
+   LIVEKIT_API_KEY=your_api_key
+   LIVEKIT_API_SECRET=your_api_secret
+   NEXT_PUBLIC_LIVEKIT_URL=wss://your-livekit-server.com
+   ```
+3. Use `useWebcamWithLiveKit` hook instead of `useWebcam`:
+   ```typescript
+   import { useWebcamWithLiveKit } from './hooks/useWebcamWithLiveKit';
+   
+   const { videoRef, state, startCamera } = useWebcamWithLiveKit({
+     enableLiveKit: true,
+     roomName: 'my-session',
+   });
+   ```
+
+See `app/examples/LiveKitIntegrationExample.tsx` for complete examples.
+
+## Project Structure
+
+- `app/hooks/` - React hooks for webcam, focus detection, and LiveKit
+- `app/components/` - UI components
+- `app/api/` - API routes including LiveKit token generation
+- `app/lib/` - Utility functions and classifiers
+- `app/store/` - Zustand state management
 
 ## Learn More
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- [Next.js Documentation](https://nextjs.org/docs)
+- [LiveKit Documentation](https://docs.livekit.io/)
+- [MediaPipe Documentation](https://developers.google.com/mediapipe)
 
 ## Deploy on Vercel
 
