@@ -5,7 +5,7 @@
   --bg-primary: #0a0a0f;
   --bg-secondary: #12121a;
   --bg-tertiary: #1a1a24;
-  
+
   /* Accent colors */
   --accent-focus: #10b981;
   --accent-focus-glow: rgba(16, 185, 129, 0.4);
@@ -15,17 +15,17 @@
   --accent-danger-glow: rgba(239, 68, 68, 0.4);
   --accent-purple: #8b5cf6;
   --accent-purple-glow: rgba(139, 92, 246, 0.4);
-  
+
   /* Text colors */
   --text-primary: #f4f4f5;
   --text-secondary: #a1a1aa;
   --text-muted: #71717a;
-  
+
   /* Glassmorphism */
   --glass-bg: rgba(255, 255, 255, 0.05);
   --glass-border: rgba(255, 255, 255, 0.1);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  
+
   /* Spacing */
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -91,10 +91,13 @@ body {
 
 /* Animations */
 @keyframes pulse-glow {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
     transform: scale(1);
   }
+
   50% {
     opacity: 0.8;
     transform: scale(1.05);
@@ -102,10 +105,13 @@ body {
 }
 
 @keyframes pulse-warning {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
     box-shadow: 0 0 20px var(--accent-warning-glow);
   }
+
   50% {
     opacity: 0.9;
     box-shadow: 0 0 30px var(--accent-warning-glow), 0 0 40px var(--accent-warning-glow);
@@ -113,10 +119,13 @@ body {
 }
 
 @keyframes pulse-danger {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
     box-shadow: 0 0 20px var(--accent-danger-glow);
   }
+
   50% {
     opacity: 0.85;
     box-shadow: 0 0 40px var(--accent-danger-glow), 0 0 60px var(--accent-danger-glow);
@@ -128,6 +137,7 @@ body {
     opacity: 0;
     transform: translateY(20px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -135,20 +145,45 @@ body {
 }
 
 @keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
-  20%, 40%, 60%, 80% { transform: translateX(5px); }
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  10%,
+  30%,
+  50%,
+  70%,
+  90% {
+    transform: translateX(-5px);
+  }
+
+  20%,
+  40%,
+  60%,
+  80% {
+    transform: translateX(5px);
+  }
 }
 
 @keyframes float {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0);
   }
+
   50% {
     transform: translateY(-10px);
   }

@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
 import { useWebcam } from './hooks/useWebcam';
 import { useFocusDetection } from './hooks/useFocusDetection';
+import { useOvershootDetection } from './hooks/useOvershootDetection';
 import { useEscalation } from './hooks/useEscalation';
 import { useFocusStore } from './store/focusStore';
 import { initializeGemini, isGeminiInitialized } from './lib/gemini';
@@ -15,7 +16,9 @@ import { UltimateDeterrent } from './components/UltimateDeterrent';
 
 export default function Home() {
   const [apiKey, setApiKey] = useState('');
+  const [overshootApiKey, setOvershootApiKey] = useState('');
   const [isApiKeySet, setIsApiKeySet] = useState(false);
+  const [detectionMode, setDetectionMode] = useState<'classic' | 'overshoot'>('classic');
 
   const { videoRef, state: webcamState, startCamera, stopCamera } = useWebcam();
 
@@ -31,14 +34,29 @@ export default function Home() {
   } = useFocusStore();
 
   // Focus detection - runs when session is active
-  const { state: detectionState } = useFocusDetection({
+  const { state: classicState } = useFocusDetection({
     videoElement: videoRef.current,
-    enabled: isSessionActive && webcamState.isActive,
+    enabled: isSessionActive && webcamState.isActive && detectionMode === 'classic',
     fps: 10,
     onStateChange: useCallback((state: typeof focusState, reason: string) => {
-      updateFocusState(state, reason);
-    }, [updateFocusState]),
+      if (detectionMode === 'classic') {
+        updateFocusState(state, reason);
+      }
+    }, [updateFocusState, detectionMode]),
   });
+
+  const { state: overshootState } = useOvershootDetection({
+    videoElement: videoRef.current,
+    enabled: isSessionActive && webcamState.isActive && detectionMode === 'overshoot',
+    apiKey: overshootApiKey,
+    onStateChange: useCallback((state: typeof focusState, reason: string) => {
+      if (detectionMode === 'overshoot') {
+        updateFocusState(state, reason);
+      }
+    }, [updateFocusState, detectionMode]),
+  });
+
+  const detectionState = detectionMode === 'classic' ? classicState : overshootState;
 
   // Escalation system
   useEscalation();
@@ -142,36 +160,55 @@ export default function Home() {
               className="glass-card p-6 mb-8 max-w-md mx-auto"
             >
               <h2 className="text-lg font-semibold mb-4 text-[var(--text-primary)]">
-                🔑 Connect Gemini AI
+                🔑 Connect AI Services
               </h2>
               <form onSubmit={handleApiKeySubmit} className="space-y-4">
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Enter your Gemini API key"
-                  className="w-full px-4 py-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--glass-border)] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-purple)]"
-                />
-                <button type="submit" className="btn-primary w-full">
-                  Connect
-                </button>
-                <p className="text-xs text-[var(--text-muted)] text-center">
-                  Get your API key from{' '}
-                  <a
-                    href="https://aistudio.google.com/app/apikey"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[var(--accent-purple)] hover:underline"
+                <div>
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Gemini API Key (for personality)</label>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="Enter your Gemini API key"
+                    className="w-full px-4 py-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--glass-border)] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-purple)]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Overshoot API Key (for vision)</label>
+                  <input
+                    type="password"
+                    value={overshootApiKey}
+                    onChange={(e) => setOvershootApiKey(e.target.value)}
+                    placeholder="Enter your Overshoot API key (optional)"
+                    className="w-full px-4 py-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--glass-border)] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-purple)]"
+                  />
+                  <p className="text-xs text-[var(--text-muted)] mt-1">
+                    Required for AI Vision mode. Get one at <a href="https://overshoot.ai" target="_blank" className="text-[var(--accent-purple)] hover:underline">overshoot.ai</a>
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 mb-4">
+                  <label className="text-sm text-[var(--text-secondary)]">Detection Mode:</label>
+                  <select
+                    value={detectionMode}
+                    onChange={(e) => setDetectionMode(e.target.value as 'classic' | 'overshoot')}
+                    className="bg-[var(--bg-secondary)] border border-[var(--glass-border)] text-[var(--text-primary)] rounded px-2 py-1 text-sm"
                   >
-                    Google AI Studio
-                  </a>
-                </p>
+                    <option value="classic">Classic (MediaPipe)</option>
+                    <option value="overshoot">AI (Overshoot)</option>
+                  </select>
+                </div>
+
+                <button type="submit" className="btn-primary w-full">
+                  Connect & Start
+                </button>
               </form>
               <button
                 onClick={() => setIsApiKeySet(true)}
                 className="w-full mt-3 text-sm text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
               >
-                Skip (use fallback messages)
+                Skip (use fallback messages & classic mode)
               </button>
             </motion.div>
           )}
@@ -251,14 +288,14 @@ export default function Home() {
                         <div
                           key={level}
                           className={`h-2 flex-1 rounded-full transition-colors ${level <= escalationLevel && isSessionActive
-                              ? level === 3
-                                ? 'bg-[var(--accent-danger)]'
-                                : level === 2
-                                  ? 'bg-[var(--accent-warning)]'
-                                  : level === 1
-                                    ? 'bg-[var(--accent-purple)]'
-                                    : 'bg-[var(--accent-focus)]'
-                              : 'bg-[var(--bg-tertiary)]'
+                            ? level === 3
+                              ? 'bg-[var(--accent-danger)]'
+                              : level === 2
+                                ? 'bg-[var(--accent-warning)]'
+                                : level === 1
+                                  ? 'bg-[var(--accent-purple)]'
+                                  : 'bg-[var(--accent-focus)]'
+                            : 'bg-[var(--bg-tertiary)]'
                             }`}
                         />
                       ))}
