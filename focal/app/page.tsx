@@ -15,9 +15,15 @@ import { InterventionOverlay } from './components/InterventionOverlay';
 import { UltimateDeterrent } from './components/UltimateDeterrent';
 
 export default function Home() {
-  const [apiKey, setApiKey] = useState('');
-  const [overshootApiKey, setOvershootApiKey] = useState('');
-  const [isApiKeySet, setIsApiKeySet] = useState(false);
+  const [apiKey, setApiKey] = useState(process.env.NEXT_PUBLIC_GEMINI_API_KEY || '');
+  const [overshootApiKey, setOvershootApiKey] = useState(process.env.NEXT_PUBLIC_OVERSHOOT_API_KEY || '');
+  const [isApiKeySet, setIsApiKeySet] = useState(!!process.env.NEXT_PUBLIC_GEMINI_API_KEY);
+
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
+      initializeGemini(process.env.NEXT_PUBLIC_GEMINI_API_KEY);
+    }
+  }, []);
   const [detectionMode, setDetectionMode] = useState<'classic' | 'overshoot'>('classic');
   const [overshootAnalysis, setOvershootAnalysis] = useState<OvershootAnalysis | null>(null);
 
