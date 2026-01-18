@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
 import { useWebcam } from './hooks/useWebcam';
 import { useFocusDetection } from './hooks/useFocusDetection';
-import { useOvershootDetection } from './hooks/useOvershootDetection';
+import { useOvershootDetection, OvershootAnalysis } from './hooks/useOvershootDetection';
 import { useEscalation } from './hooks/useEscalation';
 import { useFocusStore } from './store/focusStore';
 import { initializeGemini, isGeminiInitialized } from './lib/gemini';
@@ -19,6 +19,7 @@ export default function Home() {
   const [overshootApiKey, setOvershootApiKey] = useState('');
   const [isApiKeySet, setIsApiKeySet] = useState(false);
   const [detectionMode, setDetectionMode] = useState<'classic' | 'overshoot'>('classic');
+  const [overshootAnalysis, setOvershootAnalysis] = useState<OvershootAnalysis | null>(null);
 
   const { videoRef, state: webcamState, startCamera, stopCamera } = useWebcam();
 
@@ -33,30 +34,31 @@ export default function Home() {
     updateFocusState,
   } = useFocusStore();
 
-  // Focus detection - runs when session is active
-  const { state: classicState } = useFocusDetection({
-    videoElement: videoRef.current,
-    enabled: isSessionActive && webcamState.isActive && detectionMode === 'classic',
-    fps: 10,
-    onStateChange: useCallback((state: typeof focusState, reason: string) => {
-      if (detectionMode === 'classic') {
-        updateFocusState(state, reason);
-      }
-    }, [updateFocusState, detectionMode]),
-  });
-
+  // Overshoot provides analysis to MediaPipe (runs when Overshoot mode is enabled)
   const { state: overshootState } = useOvershootDetection({
     videoElement: videoRef.current,
-    enabled: isSessionActive && webcamState.isActive && detectionMode === 'overshoot',
+    enabled: isSessionActive && webcamState.isActive && detectionMode === 'overshoot' && !!overshootApiKey,
     apiKey: overshootApiKey,
-    onStateChange: useCallback((state: typeof focusState, reason: string) => {
-      if (detectionMode === 'overshoot') {
-        updateFocusState(state, reason);
-      }
-    }, [updateFocusState, detectionMode]),
+    onAnalysis: useCallback((analysis: OvershootAnalysis) => {
+      // Store Overshoot's analysis for MediaPipe to use
+      setOvershootAnalysis(analysis);
+    }, []),
   });
 
-  const detectionState = detectionMode === 'classic' ? classicState : overshootState;
+  // MediaPipe always runs and makes final decision (uses Overshoot analysis when available)
+  const { state: mediapipeState } = useFocusDetection({
+    videoElement: videoRef.current,
+    enabled: isSessionActive && webcamState.isActive,
+    fps: 10,
+    overshootAnalysis: detectionMode === 'overshoot' ? overshootAnalysis : null,
+    onStateChange: useCallback((state: typeof focusState, reason: string) => {
+      // MediaPipe always updates the status (it uses Overshoot analysis when available)
+      updateFocusState(state, reason);
+    }, [updateFocusState]),
+  });
+
+  // Use MediaPipe state (which incorporates Overshoot analysis when in Overshoot mode)
+  const detectionState = mediapipeState;
 
   // Escalation system
   useEscalation();
@@ -195,8 +197,8 @@ export default function Home() {
                     onChange={(e) => setDetectionMode(e.target.value as 'classic' | 'overshoot')}
                     className="bg-[var(--bg-secondary)] border border-[var(--glass-border)] text-[var(--text-primary)] rounded px-2 py-1 text-sm"
                   >
-                    <option value="classic">Classic (MediaPipe)</option>
-                    <option value="overshoot">AI (Overshoot)</option>
+                    <option value="classic">Classic (MediaPipe Only)</option>
+                    <option value="overshoot">Hybrid (MediaPipe + AI Analysis)</option>
                   </select>
                 </div>
 
@@ -335,7 +337,11 @@ export default function Home() {
 
               {/* Privacy note */}
               <p className="text-xs text-[var(--text-muted)] text-center">
-                🔒 Your video never leaves your device. All processing happens locally.
+                {detectionMode === 'classic' ? (
+                  <>🔒 Your video never leaves your device. All processing happens locally.</>
+                ) : (
+                  <>🔒 Classic mode: 100% local. Hybrid mode: AI analysis sent to Overshoot API.</>
+                )}
               </p>
             </motion.div>
           </div>

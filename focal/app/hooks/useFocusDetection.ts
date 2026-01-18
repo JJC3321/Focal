@@ -11,6 +11,7 @@ import {
     classifyFocusState,
     calculateHeadPose,
     areEyesOpen,
+    OvershootAnalysis,
 } from '../lib/focusClassifier';
 
 export interface FocusDetectionState {
@@ -26,6 +27,7 @@ interface UseFocusDetectionOptions {
     videoElement: HTMLVideoElement | null;
     enabled: boolean;
     fps?: number; // Processing framerate (default 10)
+    overshootAnalysis?: OvershootAnalysis | null; // Overshoot AI analysis to inform classification
     onStateChange?: (state: FocusState, reason: string) => void;
 }
 
@@ -33,6 +35,7 @@ export function useFocusDetection({
     videoElement,
     enabled,
     fps = 10,
+    overshootAnalysis = null,
     onStateChange,
 }: UseFocusDetectionOptions) {
     const faceDetectorRef = useRef<FaceDetector | null>(null);
@@ -140,12 +143,13 @@ export function useFocusDetection({
                     confidence = 0.9; // MediaPipe doesn't expose confidence per landmark
                 }
 
-                // Classify focus state
+                // Classify focus state, incorporating Overshoot analysis
                 const result = classifyFocusState({
                     faceDetected,
                     headPose,
                     eyesOpen,
                     confidence,
+                    overshootAnalysis,
                 });
 
                 // Update state
@@ -170,7 +174,7 @@ export function useFocusDetection({
             // Continue processing
             animationFrameRef.current = requestAnimationFrame(processFrame);
         },
-        [videoElement, enabled, fps, onStateChange]
+        [videoElement, enabled, fps, overshootAnalysis, onStateChange]
     );
 
     // Start/stop processing based on enabled state

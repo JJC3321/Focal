@@ -4,13 +4,19 @@ import { useRef, useCallback, useEffect, useState } from 'react';
 import { RealtimeVision } from '@overshoot/sdk';
 import { FocusState } from '../lib/focusClassifier';
 
+export interface OvershootAnalysis {
+    focused: boolean;
+    state: FocusState;
+    reason: string;
+    confidence: number;
+    thinking?: string;
+}
+
 export interface OvershootDetectionState {
     isInitialized: boolean;
     isProcessing: boolean;
     error: string | null;
-    currentState: FocusState;
-    confidence: number;
-    reason: string;
+    lastAnalysis: OvershootAnalysis | null;
 }
 
 interface UseOvershootDetectionOptions {
@@ -18,17 +24,43 @@ interface UseOvershootDetectionOptions {
     enabled: boolean;
     apiKey: string;
     prompt?: string;
-    onStateChange?: (state: FocusState, reason: string) => void;
+    onAnalysis?: (analysis: OvershootAnalysis) => void;
 }
 
-const DEFAULT_PROMPT = "Is the user focused on the screen? Answer yes or no. If no, explain why.";
+const DEFAULT_PROMPT = "Analyze if the user is focused on the screen. Determine their focus state and provide a reason.";
+
+const OUTPUT_SCHEMA = {
+    type: 'object',
+    properties: {
+        focused: {
+            type: 'boolean',
+            description: 'Whether the user is focused on the screen'
+        },
+        state: {
+            type: 'string',
+            enum: ['focused', 'distracted', 'idle'],
+            description: 'The current focus state: focused (looking at screen), distracted (looking elsewhere), or idle (no user present)'
+        },
+        reason: {
+            type: 'string',
+            description: 'Explanation for the focus state determination'
+        },
+        confidence: {
+            type: 'number',
+            minimum: 0,
+            maximum: 1,
+            description: 'Confidence level of the detection (0 to 1)'
+        }
+    },
+    required: ['focused', 'state', 'reason']
+};
 
 export function useOvershootDetection({
     videoElement,
     enabled,
     apiKey,
     prompt = DEFAULT_PROMPT,
-    onStateChange,
+    onAnalysis,
 }: UseOvershootDetectionOptions) {
     const visionRef = useRef<RealtimeVision | null>(null);
     const dataTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -37,9 +69,7 @@ export function useOvershootDetection({
         isInitialized: false,
         isProcessing: false,
         error: null,
-        currentState: 'unknown',
-        confidence: 0,
-        reason: 'Initializing AI...',
+        lastAnalysis: null,
     });
 
     // Initialize Overshoot
@@ -57,6 +87,7 @@ export function useOvershootDetection({
                 apiKey: apiKey,
                 apiUrl: 'https://cluster1.overshoot.ai/api/v0.2',
                 prompt: prompt,
+                outputSchema: OUTPUT_SCHEMA,
                 onResult: (result: any) => {
                     // Clear timeout on data receipt
                     if (dataTimeoutRef.current) {
@@ -66,57 +97,73 @@ export function useOvershootDetection({
 
                     console.log('Overshoot Result Received:', result);
 
-                    let newState: FocusState = 'unknown';
-                    let reason = 'Processing...';
-                    let confidence = 0.8;
+                    if (result && result.result) {
+                        try {
+                            // Parse structured JSON output from result.result
+                            const data = JSON.parse(result.result);
 
-                    if (result) {
-                        const data = result.data || result;
+                            let analysisState: FocusState = 'unknown';
+                            let reason = 'Processing...';
+                            let confidence = 0.8;
 
-                        // Handle text response (since we simplified the prompt)
-                        // Expected: "Yes" or "No, because..."
-                        const text = (typeof data === 'string' ? data : JSON.stringify(data)).toLowerCase();
-
-                        if (text.includes('yes')) {
-                            newState = 'focused';
-                            reason = 'Looking at screen';
-                        } else if (text.includes('no')) {
-                            if (text.includes('away') || text.includes('empty') || text.includes('no user')) {
-                                newState = 'idle';
-                            } else {
-                                newState = 'distracted';
-                            }
-                            reason = text.replace(/no,?\s*/i, '').trim() || 'Distracted';
-                        } else {
-                            // Fallback for JSON if it still returns it
-                            if (data.focused === true) newState = 'focused';
-                            else if (data.focused === false) {
-                                // If not focused, could be distracted or away
-                                if (data.reason?.toLowerCase().includes('away') ||
-                                    data.reason?.toLowerCase().includes('no user') ||
-                                    data.reason?.toLowerCase().includes('empty')) {
-                                    newState = 'idle';
+                            // Validate and use structured data
+                            if (data.state && ['focused', 'distracted', 'idle'].includes(data.state)) {
+                                analysisState = data.state as FocusState;
+                            } else if (data.focused === true) {
+                                analysisState = 'focused';
+                            } else if (data.focused === false) {
+                                // Determine if idle or distracted based on reason
+                                const reasonLower = (data.reason || '').toLowerCase();
+                                if (reasonLower.includes('away') || 
+                                    reasonLower.includes('no user') || 
+                                    reasonLower.includes('empty') ||
+                                    reasonLower.includes('not present')) {
+                                    analysisState = 'idle';
                                 } else {
-                                    newState = 'distracted';
+                                    analysisState = 'distracted';
                                 }
                             }
-                            if (data.reason) reason = data.reason;
-                        }
-                    }
 
-                    setState(prev => {
-                        if (prev.currentState !== newState || prev.reason !== reason) {
-                            onStateChange?.(newState, reason);
+                            // Use provided reason or generate default
+                            reason = data.reason || (analysisState === 'focused' ? 'Looking at screen' : 'Not focused');
+                            
+                            // Use provided confidence or default
+                            if (typeof data.confidence === 'number') {
+                                confidence = Math.max(0, Math.min(1, data.confidence));
+                            }
+
+                            // Create analysis object
+                            const analysis: OvershootAnalysis = {
+                                focused: data.focused ?? (analysisState === 'focused'),
+                                state: analysisState,
+                                reason: reason,
+                                confidence: confidence,
+                                thinking: data.reason, // The reason serves as the "thinking"
+                            };
+
+                            // Store analysis and notify MediaPipe
+                            setState(prev => ({
+                                ...prev,
+                                lastAnalysis: analysis,
+                                isProcessing: false,
+                                error: null,
+                            }));
+
+                            // Pass analysis to MediaPipe via callback
+                            onAnalysis?.(analysis);
+                        } catch (parseError) {
+                            console.error('Failed to parse Overshoot result:', parseError);
+                            console.error('Raw result:', result.result);
+                            setState(prev => ({
+                                ...prev,
+                                error: 'Failed to parse AI response',
+                                isProcessing: false,
+                            }));
+                            return;
                         }
-                        return {
-                            ...prev,
-                            currentState: newState,
-                            confidence,
-                            reason,
-                            isProcessing: false,
-                            error: null,
-                        };
-                    });
+                    } else {
+                        console.warn('Unexpected result format:', result);
+                    }
                 },
                 onError: (error: any) => {
                     console.error('Overshoot WebSocket Error:', error);
@@ -144,7 +191,7 @@ export function useOvershootDetection({
                 error: err.message || 'Failed to initialize AI',
             }));
         }
-    }, [apiKey, prompt, onStateChange]);
+    }, [apiKey, prompt, onAnalysis]);
 
     // Start/Stop processing
     useEffect(() => {
@@ -157,9 +204,13 @@ export function useOvershootDetection({
                 setState(prev => ({ ...prev, error: 'No data received from AI. Check API Key or try refreshing.' }));
             }, 10000);
 
-            // Try passing the video element explicitly, casting to any to bypass potential type definition issues
-            (visionRef.current as any).start(videoElement).then(() => {
+            // Start the vision stream (SDK manages camera internally)
+            visionRef.current.start().then(() => {
                 console.log('Overshoot stream started successfully');
+                setState(prev => ({
+                    ...prev,
+                    isProcessing: false,
+                }));
             }).catch((err: any) => {
                 console.error('Failed to start Overshoot stream:', err);
                 if (dataTimeoutRef.current) clearTimeout(dataTimeoutRef.current);
