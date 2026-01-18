@@ -39,6 +39,17 @@ export function useLiveKit({
     participants: 0,
   });
 
+  // Use refs for callbacks to avoid dependency loops
+  const onTrackReceivedRef = useRef(onTrackReceived);
+  const onDataReceivedRef = useRef(onDataReceived);
+  const onConnectionStateChangeRef = useRef(onConnectionStateChange);
+
+  useEffect(() => {
+    onTrackReceivedRef.current = onTrackReceived;
+    onDataReceivedRef.current = onDataReceived;
+    onConnectionStateChangeRef.current = onConnectionStateChange;
+  }, [onTrackReceived, onDataReceived, onConnectionStateChange]);
+
   const connect = useCallback(async () => {
     if (roomRef.current?.state === 'connected') {
       return;
@@ -70,14 +81,14 @@ export function useLiveKit({
       });
 
       room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, publication: any, participant: any) => {
-        if (onTrackReceived) {
-          onTrackReceived(track, participant);
+        if (onTrackReceivedRef.current) {
+          onTrackReceivedRef.current(track, participant);
         }
       });
 
       room.on(RoomEvent.DataReceived, (payload: Uint8Array, participant: any) => {
-        if (onDataReceived) {
-          onDataReceived(payload, participant);
+        if (onDataReceivedRef.current) {
+          onDataReceivedRef.current(payload, participant);
         }
       });
 
@@ -107,7 +118,7 @@ export function useLiveKit({
         participants: room.remoteParticipants.size + 1,
       });
 
-      onConnectionStateChange?.(true);
+      onConnectionStateChangeRef.current?.(true);
     } catch (err) {
       const error = err as Error;
       setState(prev => ({
@@ -116,9 +127,9 @@ export function useLiveKit({
         isConnecting: false,
         error: error.message || 'Failed to connect to LiveKit',
       }));
-      onConnectionStateChange?.(false);
+      onConnectionStateChangeRef.current?.(false);
     }
-  }, [roomName, participantName, onTrackReceived, onDataReceived, onConnectionStateChange]);
+  }, [roomName, participantName]);
 
   const disconnect = useCallback(async () => {
     if (roomRef.current) {
@@ -126,16 +137,19 @@ export function useLiveKit({
       roomRef.current = null;
     }
 
-    setState({
-      isConnected: false,
-      isConnecting: false,
-      error: null,
-      roomName: null,
-      participants: 0,
+    setState(prev => {
+      if (!prev.isConnected && !prev.isConnecting && !prev.error) return prev;
+      return {
+        isConnected: false,
+        isConnecting: false,
+        error: null,
+        roomName: null,
+        participants: 0,
+      };
     });
 
-    onConnectionStateChange?.(false);
-  }, [onConnectionStateChange]);
+    onConnectionStateChangeRef.current?.(false);
+  }, []);
 
   const publishTrack = useCallback(async (track: MediaStreamTrack) => {
     if (!roomRef.current || roomRef.current.state !== 'connected') {
@@ -163,7 +177,7 @@ export function useLiveKit({
       return;
     }
 
-    const publication = roomRef.current.localParticipant.trackPublications.find(
+    const publication = Array.from(roomRef.current.localParticipant.trackPublications.values()).find(
       pub => pub.track === track
     );
 
@@ -182,7 +196,7 @@ export function useLiveKit({
     return () => {
       disconnect();
     };
-  }, [enabled, connect, disconnect]);
+  }, [enabled, connect]); // Removed disconnect to prevent loop
 
   return {
     state,

@@ -132,6 +132,7 @@ export function useFocusDetection({
                 );
 
                 const faceDetected = landmarkerResult.faceLandmarks.length > 0;
+
                 let headPose = null;
                 let eyesOpen = true;
                 let confidence = 0;
@@ -153,13 +154,20 @@ export function useFocusDetection({
                 });
 
                 // Update state
+                // Update state only if changed
                 setState(prev => {
                     if (
-                        prev.currentState !== result.state ||
-                        prev.reason !== result.reason
+                        prev.currentState === result.state &&
+                        prev.reason === result.reason &&
+                        Math.abs(prev.confidence - result.confidence) < 0.01
                     ) {
-                        onStateChange?.(result.state, result.reason);
+                        return prev;
                     }
+
+                    // Notify parent outside of render cycle if possible, or use effect
+                    // Here we just update state, the effect will handle notification if needed
+                    // But to avoid loop, we should probably move onStateChange to an effect
+
                     return {
                         ...prev,
                         currentState: result.state,
@@ -167,6 +175,11 @@ export function useFocusDetection({
                         reason: result.reason,
                     };
                 });
+
+                // Call callback directly if state changed (to avoid effect dependency loop)
+                if (state.currentState !== result.state || state.reason !== result.reason) {
+                    onStateChange?.(result.state, result.reason);
+                }
             } catch (err) {
                 console.error('Frame processing error:', err);
             }

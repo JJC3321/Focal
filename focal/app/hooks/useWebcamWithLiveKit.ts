@@ -13,6 +13,7 @@ export interface WebcamWithLiveKitState {
 
 export interface UseWebcamWithLiveKitOptions {
   enableLiveKit?: boolean;
+  publishVideo?: boolean;
   roomName?: string;
   participantName?: string;
   onStreamingStateChange?: (isStreaming: boolean) => void;
@@ -20,6 +21,7 @@ export interface UseWebcamWithLiveKitOptions {
 
 export function useWebcamWithLiveKit({
   enableLiveKit = false,
+  publishVideo = true,
   roomName,
   participantName,
   onStreamingStateChange,
@@ -45,20 +47,20 @@ export function useWebcamWithLiveKit({
     roomName,
     participantName,
     onConnectionStateChange: (isConnected) => {
-      if (isConnected && streamRef.current && enableLiveKit) {
+      if (isConnected && streamRef.current && enableLiveKit && publishVideo) {
         publishVideoTracks();
       }
     },
   });
 
   const publishVideoTracks = useCallback(async () => {
-    if (!streamRef.current || !enableLiveKit) {
+    if (!streamRef.current || !enableLiveKit || !publishVideo) {
       return;
     }
 
     try {
       const videoTracks = streamRef.current.getVideoTracks();
-      
+
       for (const track of videoTracks) {
         await publishTrack(track);
         publishedTracksRef.current.push(track);
@@ -74,7 +76,7 @@ export function useWebcamWithLiveKit({
         error: `Failed to stream: ${error.message}`,
       }));
     }
-  }, [enableLiveKit, publishTrack, onStreamingStateChange]);
+  }, [enableLiveKit, publishVideo, publishTrack, onStreamingStateChange]);
 
   const startCamera = useCallback(async () => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
@@ -109,7 +111,7 @@ export function useWebcamWithLiveKit({
         isStreaming: false,
       });
 
-      if (enableLiveKit && liveKitState.isConnected) {
+      if (enableLiveKit && liveKitState.isConnected && publishVideo) {
         await publishVideoTracks();
       }
     } catch (err) {
@@ -185,7 +187,7 @@ export function useWebcamWithLiveKit({
         }
         // Keep video tracks active
         streamRef.current?.getVideoTracks().forEach(track => {
-          if (track.readyState === 'paused') {
+          if (track.muted) {
             track.enabled = true;
           }
         });

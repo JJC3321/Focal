@@ -33,13 +33,17 @@ export default function Home() {
   const [enableLiveKit, setEnableLiveKit] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
 
+  // Generate a stable room name for the session
+  const roomName = useState(() => `focal-session-${Date.now()}`)[0];
+
   const { videoRef, state: webcamState, startCamera, stopCamera } = useWebcamWithLiveKit({
     enableLiveKit,
-    roomName: `focal-session-${Date.now()}`,
+    publishVideo: false, // Disable video streaming as requested
+    roomName,
     participantName: 'User',
-    onStreamingStateChange: useCallback((isStreaming) => {
+    onStreamingStateChange: useCallback((isStreaming: boolean) => {
       if (isStreaming) {
-        toast.success('LiveKit streaming active');
+        toast.success('LiveKit connected');
       }
     }, []),
   });
@@ -98,13 +102,13 @@ export default function Home() {
     if (!webcamState.isActive) {
       await startCamera();
     }
-    
+
     // Request notification permission during user gesture (button click)
     const permissionGranted = await requestNotificationPermission();
     if (!permissionGranted) {
       toast.info('Enable notifications to get alerts when you switch tabs');
     }
-    
+
     startSession();
     toast.success('Focus session started! Stay locked in. 🎯');
   };
@@ -230,51 +234,7 @@ export default function Home() {
                   </p>
                 </div>
 
-                <div className="space-y-3 mb-4">
-                  <div className="flex items-center gap-2">
-                    <label className="text-sm text-[var(--text-secondary)]">Detection Mode:</label>
-                    <select
-                      value={detectionMode}
-                      onChange={(e) => setDetectionMode(e.target.value as 'classic' | 'overshoot')}
-                      className="bg-[var(--bg-secondary)] border border-[var(--glass-border)] text-[var(--text-primary)] rounded px-2 py-1 text-sm"
-                    >
-                      <option value="classic">Classic (MediaPipe Only)</option>
-                      <option value="overshoot">Hybrid (MediaPipe + AI Analysis)</option>
-                    </select>
-                  </div>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={enableLiveKit}
-                      onChange={(e) => setEnableLiveKit(e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm text-[var(--text-secondary)]">
-                      Enable LiveKit Streaming (for remote processing)
-                    </span>
-                  </label>
-                  {enableLiveKit && (
-                    <p className="text-xs text-[var(--text-muted)] ml-6">
-                      Video will be streamed to LiveKit server for low-latency remote processing
-                    </p>
-                  )}
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={voiceEnabled}
-                      onChange={(e) => setVoiceEnabled(e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm text-[var(--text-secondary)]">
-                      Enable Voice Responses (context-aware audio feedback)
-                    </span>
-                  </label>
-                  {voiceEnabled && (
-                    <p className="text-xs text-[var(--text-muted)] ml-6">
-                      Focal will speak intervention messages based on your actions (e.g., "Put down your phone", "Look at your screen")
-                    </p>
-                  )}
-                </div>
+
 
                 <button type="submit" className="btn-primary w-full">
                   Connect & Start
@@ -314,19 +274,62 @@ export default function Home() {
               />
 
               {/* Session controls */}
-              <div className="mt-6 flex gap-4">
+              <div className="mt-6 space-y-4">
+                {/* Settings Controls */}
+                <div className="glass-card p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-[var(--text-secondary)]">Detection Mode</label>
+                    <select
+                      value={detectionMode}
+                      onChange={(e) => setDetectionMode(e.target.value as 'classic' | 'overshoot')}
+                      className="bg-[var(--bg-secondary)] border border-[var(--glass-border)] text-[var(--text-primary)] rounded px-2 py-1 text-sm"
+                      disabled={isSessionActive}
+                    >
+                      <option value="classic">Classic (MediaPipe)</option>
+                      <option value="overshoot">Hybrid (MediaPipe + AI)</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-[var(--text-secondary)]">LiveKit Connection (Voice Only)</span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={enableLiveKit}
+                        onChange={(e) => setEnableLiveKit(e.target.checked)}
+                        className="sr-only peer"
+                        disabled={isSessionActive}
+                      />
+                      <div className="w-9 h-5 bg-[var(--bg-tertiary)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--accent-purple)]"></div>
+                    </label>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-[var(--text-secondary)]">Voice Responses</span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={voiceEnabled}
+                        onChange={(e) => setVoiceEnabled(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-[var(--bg-tertiary)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--accent-purple)]"></div>
+                    </label>
+                  </div>
+                </div>
+
                 {!isSessionActive ? (
                   <button
                     onClick={handleStartSession}
                     disabled={!isApiKeySet && !isGeminiInitialized()}
-                    className="btn-primary flex-1"
+                    className="btn-primary w-full"
                   >
                     🚀 Start Focus Session
                   </button>
                 ) : (
                   <button
                     onClick={handleEndSession}
-                    className="btn-secondary flex-1"
+                    className="btn-secondary w-full"
                   >
                     ⏹ End Session
                   </button>
@@ -355,19 +358,7 @@ export default function Home() {
                   <h2 className="text-lg font-semibold text-[var(--text-primary)]">
                     📊 Session Stats
                   </h2>
-                  {isSessionActive && (
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={voiceEnabled}
-                        onChange={(e) => setVoiceEnabled(e.target.checked)}
-                        className="w-4 h-4"
-                      />
-                      <span className="text-xs text-[var(--text-secondary)]">
-                        🔊 Voice
-                      </span>
-                    </label>
-                  )}
+
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="stat-card">
@@ -453,7 +444,7 @@ export default function Home() {
             </motion.div>
           </div>
         </div>
-      </div>
+      </div >
     </>
   );
 }

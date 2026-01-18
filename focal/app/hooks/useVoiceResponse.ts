@@ -41,7 +41,7 @@ function selectVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | nul
     PREFERRED_VOICE_NAMES.some(name => voice.name.includes(name))
   );
 
-  return preferredVoice || voices[0];
+  return preferredVoice || voices[2];
 }
 
 /**
