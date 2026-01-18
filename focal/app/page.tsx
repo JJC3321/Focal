@@ -30,14 +30,13 @@ export default function Home() {
   }, []);
   const [detectionMode, setDetectionMode] = useState<'classic' | 'overshoot'>('classic');
   const [overshootAnalysis, setOvershootAnalysis] = useState<OvershootAnalysis | null>(null);
-  const [enableLiveKit, setEnableLiveKit] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
 
   // Generate a stable room name for the session
   const roomName = useState(() => `focal-session-${Date.now()}`)[0];
 
   const { videoRef, state: webcamState, startCamera, stopCamera } = useWebcamWithLiveKit({
-    enableLiveKit,
+    enableLiveKit: false,
     publishVideo: false, // Disable video streaming as requested
     roomName,
     participantName: 'User',
@@ -258,15 +257,6 @@ export default function Home() {
               transition={{ delay: 0.1 }}
             >
               {/* LiveKit Status */}
-              {enableLiveKit && (
-                <LiveKitStatus
-                  isConnected={webcamState.liveKitConnected || false}
-                  isStreaming={webcamState.isStreaming || false}
-                  error={webcamState.liveKitError || null}
-                  participants={1}
-                />
-              )}
-
               <WebcamView
                 videoRef={videoRef}
                 state={webcamState}
@@ -290,19 +280,7 @@ export default function Home() {
                     </select>
                   </div>
 
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-[var(--text-secondary)]">LiveKit Connection (Voice Only)</span>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={enableLiveKit}
-                        onChange={(e) => setEnableLiveKit(e.target.checked)}
-                        className="sr-only peer"
-                        disabled={isSessionActive}
-                      />
-                      <div className="w-9 h-5 bg-[var(--bg-tertiary)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--accent-purple)]"></div>
-                    </label>
-                  </div>
+
 
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-[var(--text-secondary)]">Voice Responses</span>
@@ -433,9 +411,7 @@ export default function Home() {
 
               {/* Privacy note */}
               <p className="text-xs text-[var(--text-muted)] text-center">
-                {enableLiveKit ? (
-                  <>🔒 LiveKit mode: Video streamed to server for remote processing. Low-latency real-time communication enabled.</>
-                ) : detectionMode === 'classic' ? (
+                {detectionMode === 'classic' ? (
                   <>🔒 Your video never leaves your device. All processing happens locally.</>
                 ) : (
                   <>🔒 Classic mode: 100% local. Hybrid mode: AI analysis sent to Overshoot API.</>
