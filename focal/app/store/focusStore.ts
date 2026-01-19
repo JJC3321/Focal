@@ -80,6 +80,7 @@ export const useFocusStore = create<FocusStore>()(
         },
 
         endSession: () => {
+            console.trace('[DEBUG] endSession called');
             set({
                 isSessionActive: false,
                 focusState: 'unknown',

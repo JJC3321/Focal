@@ -1,21 +1,20 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
   title: "Focal - AI Focus Monitor",
-  description: "AI-powered focus monitoring with context-aware interventions. Stay locked in with tough love productivity coaching.",
-  keywords: ["focus", "productivity", "AI", "monitoring", "study", "work"],
+  description: "AI-powered focus monitoring with context-aware interventions. Stay locked in with intelligent productivity coaching.",
+  keywords: ["focus", "productivity", "AI", "monitoring", "study", "work", "concentration"],
+  authors: [{ name: "Focal" }],
+  themeColor: "#0d0f14",
+  colorScheme: "dark",
 };
 
 export default function RootLayout({
@@ -24,10 +23,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+    <html lang="en" className="dark">
+      <body className={`${inter.variable} antialiased bg-[#0d0f14]`}>
         {children}
       </body>
     </html>

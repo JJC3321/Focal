@@ -32,21 +32,7 @@ export default function Home() {
   const [overshootAnalysis, setOvershootAnalysis] = useState<OvershootAnalysis | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
 
-  // Generate a stable room name for the session
-  const roomName = useState(() => `focal-session-${Date.now()}`)[0];
-
-  const { videoRef, state: webcamState, startCamera, stopCamera } = useWebcamWithLiveKit({
-    enableLiveKit: false,
-    publishVideo: false, // Disable video streaming as requested
-    roomName,
-    participantName: 'User',
-    onStreamingStateChange: useCallback((isStreaming: boolean) => {
-      if (isStreaming) {
-        toast.success('LiveKit connected');
-      }
-    }, []),
-  });
-
+  // Get store actions first so they're available for callbacks
   const {
     isSessionActive,
     focusState,
@@ -58,51 +44,56 @@ export default function Home() {
     updateFocusState,
   } = useFocusStore();
 
-  // Track page visibility (for TabFocusIndicator component)
+  // Generate a stable room name for the session
+  const roomName = useState(() => `focal-session-${Date.now()}`)[0];
+
+  const { videoRef, state: webcamState, startCamera, stopCamera } = useWebcamWithLiveKit({
+    enableLiveKit: false,
+    publishVideo: false,
+    roomName,
+    participantName: 'User',
+    onStreamingStateChange: useCallback((isStreaming: boolean) => {
+      if (isStreaming) {
+        toast.success('LiveKit connected');
+      }
+    }, []),
+    // Removed onUnexpectedStop - was causing false triggers
+  });
+
   const { isVisible } = usePageVisibility();
 
-  // Show browser notification when tab becomes hidden during active session
-  // This listens directly to visibilitychange events, not React state
   useTabFocusNotification({
     isSessionActive,
   });
 
-  // Overshoot provides analysis to MediaPipe (runs when Overshoot mode is enabled)
   const { state: overshootState } = useOvershootDetection({
     videoElement: videoRef.current,
     enabled: isSessionActive && webcamState.isActive && detectionMode === 'overshoot' && !!overshootApiKey,
     apiKey: overshootApiKey,
     onAnalysis: useCallback((analysis: OvershootAnalysis) => {
-      // Store Overshoot's analysis for MediaPipe to use
       setOvershootAnalysis(analysis);
     }, []),
   });
 
-  // MediaPipe always runs and makes final decision (uses Overshoot analysis when available)
   const { state: mediapipeState } = useFocusDetection({
     videoElement: videoRef.current,
     enabled: isSessionActive && webcamState.isActive,
     fps: 10,
     overshootAnalysis: detectionMode === 'overshoot' ? overshootAnalysis : null,
     onStateChange: useCallback((state: typeof focusState, reason: string) => {
-      // MediaPipe always updates the status (it uses Overshoot analysis when available)
       updateFocusState(state, reason);
     }, [updateFocusState]),
   });
 
-  // Use MediaPipe state (which incorporates Overshoot analysis when in Overshoot mode)
   const detectionState = mediapipeState;
 
-  // Escalation system with voice responses
   useEscalation({ voiceEnabled });
 
-  // Handle session start
   const handleStartSession = async () => {
     if (!webcamState.isActive) {
       await startCamera();
     }
 
-    // Request notification permission during user gesture (button click)
     const permissionGranted = await requestNotificationPermission();
     if (!permissionGranted) {
       toast.info('Enable notifications to get alerts when you switch tabs');
@@ -112,14 +103,12 @@ export default function Home() {
     toast.success('Focus session started! Stay locked in. 🎯');
   };
 
-  // Handle session end
   const handleEndSession = () => {
     endSession();
     stopCamera();
     toast.info('Session ended. Great work! 💪');
   };
 
-  // Handle API key submission
   const handleApiKeySubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (apiKey.trim()) {
@@ -129,7 +118,6 @@ export default function Home() {
     }
   };
 
-  // Format time display
   const formatTime = (ms: number) => {
     const seconds = Math.floor(ms / 1000);
     const minutes = Math.floor(seconds / 60);
@@ -144,7 +132,6 @@ export default function Home() {
     return `${seconds}s`;
   };
 
-  // Session duration timer
   const [sessionDuration, setSessionDuration] = useState(0);
 
   useEffect(() => {
@@ -173,6 +160,9 @@ export default function Home() {
         }}
       />
 
+      {/* Ambient background glow */}
+      <div className="ambient-glow" />
+
       {/* Tab focus indicator */}
       <TabFocusIndicator isVisible={isVisible} isSessionActive={isSessionActive} />
 
@@ -181,148 +171,169 @@ export default function Home() {
       {escalationLevel === 2 && <InterventionOverlay level={2} />}
       {escalationLevel === 3 && <UltimateDeterrent />}
 
-      <div className="min-h-screen bg-[var(--bg-primary)] p-6 md:p-12">
-        <div className="max-w-6xl mx-auto">
+      <div className="min-h-screen relative z-10 p-8 md:p-12 lg:p-16">
+        <div className="max-w-7xl mx-auto">
           {/* Header */}
           <motion.header
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-center mb-12"
+            className="text-center mb-16"
           >
-            <h1 className="text-5xl font-bold bg-gradient-to-r from-[var(--accent-purple)] to-[var(--accent-focus)] bg-clip-text text-transparent mb-3">
-              Focal
+            <h1 className="text-6xl font-bold mb-4 tracking-tight">
+              <span className="bg-gradient-to-r from-[var(--accent-primary-light)] via-[var(--accent-primary)] to-[var(--accent-primary-dark)] bg-clip-text text-transparent">
+                Focal
+              </span>
             </h1>
-            <p className="text-[var(--text-secondary)] text-lg">
+            <p className="text-[var(--text-muted)] text-lg font-light tracking-wide">
               AI-powered focus monitoring with tough love
             </p>
           </motion.header>
 
-          {/* API Key Setup (if not set) */}
+          {/* API Key Setup Modal */}
           {!isApiKeySet && (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="glass-card p-6 mb-8 max-w-md mx-auto"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="glass-card p-8 mb-12 max-w-lg mx-auto"
             >
-              <h2 className="text-lg font-semibold mb-4 text-[var(--text-primary)]">
-                🔑 Connect AI Services
-              </h2>
-              <form onSubmit={handleApiKeySubmit} className="space-y-4">
+              <div className="section-header">
+                <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
+                <h2>Connect AI Services</h2>
+              </div>
+
+              <form onSubmit={handleApiKeySubmit} className="space-y-5">
                 <div>
-                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Gemini API Key (for personality)</label>
+                  <label className="block text-sm font-medium text-[var(--text-muted)] mb-2">
+                    Gemini API Key
+                  </label>
                   <input
                     type="password"
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
                     placeholder="Enter your Gemini API key"
-                    className="w-full px-4 py-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--glass-border)] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-purple)]"
+                    className="input-premium"
                   />
+                  <p className="text-xs text-[var(--text-muted)] mt-2 opacity-70">
+                    Powers AI personality & interventions
+                  </p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Overshoot API Key (for vision)</label>
+                  <label className="block text-sm font-medium text-[var(--text-muted)] mb-2">
+                    Overshoot API Key
+                  </label>
                   <input
                     type="password"
                     value={overshootApiKey}
                     onChange={(e) => setOvershootApiKey(e.target.value)}
                     placeholder="Enter your Overshoot API key (optional)"
-                    className="w-full px-4 py-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--glass-border)] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-purple)]"
+                    className="input-premium"
                   />
-                  <p className="text-xs text-[var(--text-muted)] mt-1">
-                    Required for AI Vision mode. Get one at <a href="https://overshoot.ai" target="_blank" className="text-[var(--accent-purple)] hover:underline">overshoot.ai</a>
+                  <p className="text-xs text-[var(--text-muted)] mt-2 opacity-70">
+                    Optional • Enables advanced vision analysis
                   </p>
                 </div>
 
-
-
-                <button type="submit" className="btn-primary w-full">
-                  Connect & Start
+                <button type="submit" className="btn-primary w-full mt-6">
+                  Connect & Continue
                 </button>
               </form>
+
               <button
                 onClick={() => setIsApiKeySet(true)}
-                className="w-full mt-3 text-sm text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                className="w-full mt-4 py-3 text-sm text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
               >
-                Skip (use fallback messages & classic mode)
+                Skip for now
               </button>
             </motion.div>
           )}
 
-          {/* Main content grid */}
-          <div className="grid lg:grid-cols-2 gap-8">
-            {/* Left column - Webcam */}
+          {/* Main Dashboard Grid */}
+          <div className="grid lg:grid-cols-5 gap-8">
+            {/* Left column - Webcam & Controls (3 cols) */}
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.1 }}
+              className="lg:col-span-3 space-y-6"
             >
-              {/* LiveKit Status */}
-              <WebcamView
-                videoRef={videoRef}
-                state={webcamState}
-                onStart={startCamera}
-              />
+              {/* Webcam View - Hero Section */}
+              <div className="glass-card-glow p-1">
+                <WebcamView
+                  videoRef={videoRef}
+                  state={webcamState}
+                  onStart={startCamera}
+                />
+              </div>
 
-              {/* Session controls */}
-              <div className="mt-6 space-y-4">
-                {/* Settings Controls */}
-                <div className="glass-card p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-[var(--text-secondary)]">Detection Mode</label>
-                    <select
-                      value={detectionMode}
-                      onChange={(e) => setDetectionMode(e.target.value as 'classic' | 'overshoot')}
-                      className="bg-[var(--bg-secondary)] border border-[var(--glass-border)] text-[var(--text-primary)] rounded px-2 py-1 text-sm"
-                      disabled={isSessionActive}
-                    >
-                      <option value="classic">Classic (MediaPipe)</option>
-                      <option value="overshoot">Hybrid (MediaPipe + AI)</option>
-                    </select>
-                  </div>
-
-
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-[var(--text-secondary)]">Voice Responses</span>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={voiceEnabled}
-                        onChange={(e) => setVoiceEnabled(e.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-9 h-5 bg-[var(--bg-tertiary)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--accent-purple)]"></div>
-                    </label>
-                  </div>
+              {/* Session Controls Card */}
+              <div className="settings-card">
+                <div className="settings-row">
+                  <span className="settings-label">Detection Mode</span>
+                  <select
+                    value={detectionMode}
+                    onChange={(e) => setDetectionMode(e.target.value as 'classic' | 'overshoot')}
+                    className="select-premium"
+                    disabled={isSessionActive}
+                  >
+                    <option value="classic">Classic (MediaPipe)</option>
+                    <option value="overshoot">Hybrid (AI Enhanced)</option>
+                  </select>
                 </div>
 
-                {!isSessionActive ? (
+                <div className="settings-row">
+                  <span className="settings-label">Voice Responses</span>
                   <button
-                    onClick={handleStartSession}
-                    disabled={!isApiKeySet && !isGeminiInitialized()}
-                    className="btn-primary w-full"
-                  >
-                    🚀 Start Focus Session
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleEndSession}
-                    className="btn-secondary w-full"
-                  >
-                    ⏹ End Session
-                  </button>
-                )}
+                    onClick={() => setVoiceEnabled(!voiceEnabled)}
+                    className={`toggle-switch ${voiceEnabled ? 'active' : ''}`}
+                    aria-label="Toggle voice responses"
+                  />
+                </div>
               </div>
+
+              {/* Start/End Session Button */}
+              {!isSessionActive ? (
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handleStartSession}
+                  disabled={!isApiKeySet && !isGeminiInitialized()}
+                  className="btn-primary w-full py-5 text-lg"
+                >
+                  <span className="flex items-center justify-center gap-3">
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" />
+                    </svg>
+                    Start Focus Session
+                  </span>
+                </motion.button>
+              ) : (
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handleEndSession}
+                  className="btn-secondary w-full py-5 text-lg"
+                >
+                  <span className="flex items-center justify-center gap-3">
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                      <rect x="6" y="6" width="12" height="12" rx="2" />
+                    </svg>
+                    End Session
+                  </span>
+                </motion.button>
+              )}
             </motion.div>
 
-            {/* Right column - Stats & Status */}
+            {/* Right column - Stats & Info (2 cols) */}
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.2 }}
-              className="space-y-6"
+              className="lg:col-span-2 space-y-6"
             >
-              {/* Focus Status */}
+              {/* Focus Status Indicator */}
               {isSessionActive && (
                 <FocusIndicator
                   state={focusState}
@@ -330,14 +341,16 @@ export default function Home() {
                 />
               )}
 
-              {/* Session Stats */}
+              {/* Session Stats Card */}
               <div className="glass-card p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-                    📊 Session Stats
-                  </h2>
-
+                <div className="section-header">
+                  <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 3v18h18" />
+                    <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3" />
+                  </svg>
+                  <h2>Session Stats</h2>
                 </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="stat-card">
                     <span className="stat-label">Duration</span>
@@ -351,76 +364,101 @@ export default function Home() {
                       {isSessionActive ? sessionStats.distractionCount : '--'}
                     </span>
                   </div>
-                  <div className="stat-card col-span-2">
-                    <span className="stat-label">Escalation Level</span>
-                    <div className="flex items-center gap-2 mt-1">
-                      {[0, 1, 2, 3].map((level) => (
-                        <div
-                          key={level}
-                          className={`h-2 flex-1 rounded-full transition-colors ${level <= escalationLevel && isSessionActive
+                </div>
+
+                {/* Escalation Level Bar */}
+                <div className="mt-6">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
+                      Escalation Level
+                    </span>
+                    <span className="text-xs text-[var(--text-muted)]">
+                      {isSessionActive ? `${escalationLevel}/3` : '--'}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    {[0, 1, 2, 3].map((level) => (
+                      <div
+                        key={level}
+                        className={`escalation-bar flex-1 ${level <= escalationLevel && isSessionActive ? 'active' : ''}`}
+                        style={{
+                          background: level <= escalationLevel && isSessionActive
                             ? level === 3
-                              ? 'bg-[var(--accent-danger)]'
+                              ? 'var(--accent-danger)'
                               : level === 2
-                                ? 'bg-[var(--accent-warning)]'
+                                ? 'var(--accent-warning)'
                                 : level === 1
-                                  ? 'bg-[var(--accent-purple)]'
-                                  : 'bg-[var(--accent-focus)]'
-                            : 'bg-[var(--bg-tertiary)]'
-                            }`}
-                        />
-                      ))}
-                    </div>
+                                  ? 'var(--accent-primary)'
+                                  : 'var(--accent-focus)'
+                            : 'var(--bg-tertiary)'
+                        }}
+                      />
+                    ))}
                   </div>
                 </div>
               </div>
 
-              {/* How it works */}
-              <div className="glass-card p-6">
-                <h2 className="text-lg font-semibold mb-4 text-[var(--text-primary)]">
-                  🎯 How it works
-                </h2>
-                <ul className="space-y-3 text-sm text-[var(--text-secondary)]">
-                  <li className="flex items-start gap-2">
-                    <span className="text-[var(--accent-focus)]">•</span>
+              {/* How it works Card */}
+              <div className="info-panel">
+                <div className="section-header">
+                  <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 16v-4" />
+                    <path d="M12 8h.01" />
+                  </svg>
+                  <h2>How it works</h2>
+                </div>
+
+                <ul className="info-list">
+                  <li>
+                    <span className="bullet" style={{ background: 'var(--accent-focus)' }} />
                     <span>AI monitors your face & gaze direction</span>
                   </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-[var(--accent-purple)]">•</span>
+                  <li>
+                    <span className="bullet" style={{ background: 'var(--accent-primary)' }} />
                     <span>5s distracted → Gentle reminder</span>
                   </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-[var(--accent-warning)]">•</span>
-                    <span>15s ignored → Firm warning popup</span>
+                  <li>
+                    <span className="bullet" style={{ background: 'var(--accent-warning)' }} />
+                    <span>15s ignored → Firm warning</span>
                   </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-[var(--accent-danger)]">•</span>
-                    <span>30s ignored → The McDonald's intervention 🍔</span>
+                  <li>
+                    <span className="bullet" style={{ background: 'var(--accent-danger)' }} />
+                    <span>30s ignored → The intervention</span>
                   </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-[var(--text-muted)]">•</span>
+                  <li>
+                    <span className="bullet" style={{ background: 'var(--text-muted)' }} />
                     <span>30s focused → Slate wiped clean</span>
                   </li>
                   {voiceEnabled && (
-                    <li className="flex items-start gap-2">
-                      <span className="text-[var(--accent-purple)]">🔊</span>
-                      <span>Voice responses provide context-aware feedback (e.g., "Put down your phone", "Look at your screen")</span>
+                    <li>
+                      <svg className="w-4 h-4 text-[var(--accent-primary)] flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M11 5L6 9H2v6h4l5 4V5z" />
+                        <path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07" fill="none" stroke="currentColor" strokeWidth="2" />
+                      </svg>
+                      <span>Voice feedback enabled</span>
                     </li>
                   )}
                 </ul>
               </div>
 
-              {/* Privacy note */}
-              <p className="text-xs text-[var(--text-muted)] text-center">
-                {detectionMode === 'classic' ? (
-                  <>🔒 Your video never leaves your device. All processing happens locally.</>
-                ) : (
-                  <>🔒 Classic mode: 100% local. Hybrid mode: AI analysis sent to Overshoot API.</>
-                )}
-              </p>
+              {/* Privacy Note */}
+              <div className="privacy-note">
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0110 0v4" />
+                </svg>
+                <span>
+                  {detectionMode === 'classic'
+                    ? 'Video processed locally on your device'
+                    : 'Hybrid mode sends frames to Overshoot API'
+                  }
+                </span>
+              </div>
             </motion.div>
           </div>
         </div>
-      </div >
+      </div>
     </>
   );
 }

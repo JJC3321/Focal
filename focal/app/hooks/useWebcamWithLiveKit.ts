@@ -17,6 +17,7 @@ export interface UseWebcamWithLiveKitOptions {
   roomName?: string;
   participantName?: string;
   onStreamingStateChange?: (isStreaming: boolean) => void;
+  onUnexpectedStop?: () => void;
 }
 
 export function useWebcamWithLiveKit({
@@ -25,10 +26,13 @@ export function useWebcamWithLiveKit({
   roomName,
   participantName,
   onStreamingStateChange,
+  onUnexpectedStop,
 }: UseWebcamWithLiveKitOptions = {}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const publishedTracksRef = useRef<MediaStreamTrack[]>([]);
+  const isStoppingRef = useRef(false); // Flag to track intentional stops
+  const isMountedRef = useRef(true);
 
   const [state, setState] = useState<WebcamWithLiveKitState>({
     isLoading: false,
@@ -37,6 +41,12 @@ export function useWebcamWithLiveKit({
     hasPermission: null,
     isStreaming: false,
   });
+
+  // Store callbacks in refs to avoid dependency issues
+  const onUnexpectedStopRef = useRef(onUnexpectedStop);
+  useEffect(() => {
+    onUnexpectedStopRef.current = onUnexpectedStop;
+  }, [onUnexpectedStop]);
 
   const {
     state: liveKitState,
@@ -66,19 +76,24 @@ export function useWebcamWithLiveKit({
         publishedTracksRef.current.push(track);
       }
 
-      setState(prev => ({ ...prev, isStreaming: true }));
-      onStreamingStateChange?.(true);
+      if (isMountedRef.current) {
+        setState(prev => ({ ...prev, isStreaming: true }));
+        onStreamingStateChange?.(true);
+      }
     } catch (err) {
       const error = err as Error;
       console.error('Failed to publish video tracks:', error);
-      setState(prev => ({
-        ...prev,
-        error: `Failed to stream: ${error.message}`,
-      }));
+      if (isMountedRef.current) {
+        setState(prev => ({
+          ...prev,
+          error: `Failed to stream: ${error.message}`,
+        }));
+      }
     }
   }, [enableLiveKit, publishVideo, publishTrack, onStreamingStateChange]);
 
   const startCamera = useCallback(async () => {
+    isStoppingRef.current = false;
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
@@ -98,18 +113,44 @@ export function useWebcamWithLiveKit({
 
       streamRef.current = stream;
 
+      // Add onended listener to detect unexpected camera stops
+      const videoTracks = stream.getVideoTracks();
+      videoTracks.forEach(track => {
+        track.onended = () => {
+          // Only handle if this wasn't an intentional stop
+          if (!isStoppingRef.current && isMountedRef.current) {
+            console.warn('Camera track ended unexpectedly');
+            setState(prev => ({
+              ...prev,
+              isActive: false,
+              error: 'Camera disconnected unexpectedly',
+            }));
+            onUnexpectedStopRef.current?.();
+          }
+        };
+
+        // Also listen for mute events (some browsers use this instead of ended)
+        track.onmute = () => {
+          if (!isStoppingRef.current && isMountedRef.current) {
+            console.warn('Camera track muted unexpectedly');
+          }
+        };
+      });
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
 
-      setState({
-        isLoading: false,
-        isActive: true,
-        error: null,
-        hasPermission: true,
-        isStreaming: false,
-      });
+      if (isMountedRef.current) {
+        setState({
+          isLoading: false,
+          isActive: true,
+          error: null,
+          hasPermission: true,
+          isStreaming: false,
+        });
+      }
 
       if (enableLiveKit && liveKitState.isConnected && publishVideo) {
         await publishVideoTracks();
@@ -120,7 +161,9 @@ export function useWebcamWithLiveKit({
 
       if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
         errorMessage = 'Camera permission denied. Please allow camera access.';
-        setState(prev => ({ ...prev, hasPermission: false }));
+        if (isMountedRef.current) {
+          setState(prev => ({ ...prev, hasPermission: false }));
+        }
       } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
         errorMessage = 'No camera found. Please connect a camera.';
       } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
@@ -129,27 +172,38 @@ export function useWebcamWithLiveKit({
         errorMessage = error.message;
       }
 
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        isActive: false,
-        error: errorMessage,
-      }));
+      if (isMountedRef.current) {
+        setState(prev => ({
+          ...prev,
+          isLoading: false,
+          isActive: false,
+          error: errorMessage,
+        }));
+      }
     }
-  }, [enableLiveKit, liveKitState.isConnected, publishVideoTracks]);
+  }, [enableLiveKit, liveKitState.isConnected, publishVideoTracks, publishVideo]);
 
   const stopCamera = useCallback(async () => {
+    // Mark that this is an intentional stop
+    isStoppingRef.current = true;
+
     if (enableLiveKit) {
       for (const track of publishedTracksRef.current) {
         await unpublishTrack(track);
       }
       publishedTracksRef.current = [];
-      setState(prev => ({ ...prev, isStreaming: false }));
-      onStreamingStateChange?.(false);
+      if (isMountedRef.current) {
+        setState(prev => ({ ...prev, isStreaming: false }));
+        onStreamingStateChange?.(false);
+      }
     }
 
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current.getTracks().forEach(track => {
+        track.onended = null; // Remove listener before stopping
+        track.onmute = null;
+        track.stop();
+      });
       streamRef.current = null;
     }
 
@@ -157,11 +211,13 @@ export function useWebcamWithLiveKit({
       videoRef.current.srcObject = null;
     }
 
-    setState(prev => ({
-      ...prev,
-      isActive: false,
-      isLoading: false,
-    }));
+    if (isMountedRef.current) {
+      setState(prev => ({
+        ...prev,
+        isActive: false,
+        isLoading: false,
+      }));
+    }
   }, [enableLiveKit, unpublishTrack, onStreamingStateChange]);
 
   useEffect(() => {
@@ -172,22 +228,24 @@ export function useWebcamWithLiveKit({
 
   // Keep video playing even when tab is not focused
   useEffect(() => {
-    if (!videoRef.current || !streamRef.current) {
+    const video = videoRef.current;
+    const stream = streamRef.current;
+
+    if (!video || !stream) {
       return;
     }
 
-    const video = videoRef.current;
     const handleVisibilityChange = () => {
-      if (document.hidden) {
+      if (document.hidden && streamRef.current) {
         // Tab is hidden - ensure video continues playing
-        if (video.paused) {
+        if (video.paused && streamRef.current) {
           video.play().catch(err => {
             console.warn('Failed to play video in background:', err);
           });
         }
         // Keep video tracks active
         streamRef.current?.getVideoTracks().forEach(track => {
-          if (track.muted) {
+          if (!track.enabled) {
             track.enabled = true;
           }
         });
@@ -201,10 +259,21 @@ export function useWebcamWithLiveKit({
     };
   }, [state.isActive]);
 
+  // Track mount status for cleanup
   useEffect(() => {
+    isMountedRef.current = true;
+
     return () => {
+      isMountedRef.current = false;
+      // Only cleanup tracks if they exist and we're unmounting
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
+        isStoppingRef.current = true; // Mark as intentional
+        streamRef.current.getTracks().forEach(track => {
+          track.onended = null;
+          track.onmute = null;
+          track.stop();
+        });
+        streamRef.current = null;
       }
     };
   }, []);
@@ -220,4 +289,3 @@ export function useWebcamWithLiveKit({
     stopCamera,
   };
 }
-
